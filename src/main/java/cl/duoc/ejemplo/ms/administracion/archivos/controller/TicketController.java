@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PutMapping;
 
 import cl.duoc.ejemplo.ms.administracion.archivos.service.AwsS3Service;
 import cl.duoc.ejemplo.ms.administracion.archivos.service.EfsService;
@@ -109,4 +110,56 @@ public class TicketController {
         int cantidad,
         int precioUnitario
     ) {}
+
+    
+    @PutMapping(
+        value = "/actualizar",
+        produces = MediaType.APPLICATION_PDF_VALUE
+    )
+    public ResponseEntity<byte[]> actualizarTicket(
+            @RequestBody TicketRequest request) throws IOException {
+
+        // 1. Identificar el ticket existente
+        String nombreArchivo =
+                nombreSeguro(request.codigoTicket()) + ".pdf";
+
+        String rutaTicket =
+                "evento-" + nombreSeguro(request.evento()) +
+                "/usuario-" + nombreSeguro(request.usuario()) +
+                "/" + nombreArchivo;
+
+        // 2. Verificar que el ticket exista en Amazon S3
+        // Si no existe, el servicio lanzara una excepcion.
+        awsS3Service.downloadAsBytes(bucket, rutaTicket);
+
+        // 3. Generar la nueva version del PDF
+        byte[] pdfActualizado = ticketPdfService.generarTicket(
+                request.evento(),
+                request.usuario(),
+                request.codigoTicket(),
+                request.cantidad(),
+                request.precioUnitario()
+        );
+
+        // 4. Reemplazar el archivo anterior en EFS
+        efsService.guardarTicketPdf(rutaTicket, pdfActualizado);
+
+        // 5. Reemplazar el archivo anterior en Amazon S3
+        awsS3Service.uploadPdf(
+                bucket,
+                rutaTicket,
+                pdfActualizado
+        );
+
+        // 6. Devolver la nueva version del PDF
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(
+                    HttpHeaders.CONTENT_DISPOSITION,
+                    "attachment; filename=\"" + nombreArchivo + "\""
+                )
+                .contentLength(pdfActualizado.length)
+                .body(pdfActualizado);
+    }
+
 }
