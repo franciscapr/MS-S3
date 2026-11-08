@@ -1,67 +1,86 @@
+
 name: Build and Push Docker Image
- 
+
 on:
   push:
-    branches: 
-      - main
-  pull_request:
     branches:
       - main
-jobs:  
+
+jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-
-      # Paso 1: Checkout del repositorio
+      # 1. Descargar el codigo
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      # Paso 2: Autenticar en DockerHub
+      # 2. Iniciar sesion en Docker Hub
       - name: Log in to DockerHub
-        uses: docker/login-action@v2 
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Paso 3: Construir la imagen de Docker
+      # 3. Construir imagen Docker
       - name: Build Docker Image
-        run: |
-          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/my-app:latest .
+        run: docker build -t franciscaparedespr/my-app:latest .
 
-      # Paso 4: Hacer push de la imagen a DockerHub
+      # 4. Publicar imagen Docker
       - name: Push Docker Image
-        run: |
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/my-app:latest
-          
-     # Paso 5: Configurar credenciales de AWS para SSH, incluyendo AWS_SESSION_TOKEN
-      - name: Set up AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1  # Cambia a tu región
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-    # Paso 5.5: 
+        run: docker push franciscaparedespr/my-app:latest
+
+      # 5. Configurar clave SSH
       - name: Add SSH Key
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
 
-
-      # Paso 6: Conectarse a EC2 y desplegar el contenedor
+      # 6. Desplegar automaticamente en EC2
       - name: SSH commands to deploy
+        env:
+          USER_SERVER: ${{ secrets.USER_SERVER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${{ secrets.USER_SERVER }}@${{ secrets.EC2_HOST }} << 'EOF'
-            # Autenticar en DockerHub desde EC2
-            echo ${{ secrets.DOCKERHUB_TOKEN }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
-            # Descargar la última versión de la imagen
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/my-app:latest
-            # Parar y eliminar cualquier contenedor previo
-            docker stop my-app || true && docker rm my-app || true
-            # Iniciar el contenedor
-            docker run -d \
-              --name my-app \
-              -p 8080:8080 \
-              --mount type=bind,source=/home/ec2-user/efs/tickets,target=/app/efs \
-              ${{ secrets.DOCKERHUB_USERNAME }}/my-app:latest
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no "$USER_SERVER@$EC2_HOST" << 'EOF'
+          set -e
+
+          # Comprobar que EFS esta montado
+          mountpoint -q /home/ec2-user/efs || {
+            echo "ERROR: Amazon EFS no esta montado"
+            exit 1
+          }
+
+          # Comprobar la carpeta de tickets
+          test -d /home/ec2-user/efs/tickets || {
+            echo "ERROR: No existe la carpeta tickets"
+            exit 1
+          }
+
+          # Comprobar permisos de escritura
+          test -w /home/ec2-user/efs/tickets || {
+            echo "ERROR: No hay permisos de escritura en EFS"
+            exit 1
+          }
+
+          # Descargar nueva imagen desde Docker Hub
+          docker pull franciscaparedespr/my-app:latest
+
+          # Detener y eliminar el contenedor anterior
+          docker stop my-app || true
+          docker rm my-app || true
+
+          # Crear contenedor con EFS montado
+          docker run -d \
+            --name my-app \
+            --restart unless-stopped \
+            -p 8080:8080 \
+            --mount type=bind,source=/home/ec2-user/efs/tickets,target=/app/efs \
+            franciscaparedespr/my-app:latest
+
+          # Verificar montaje
+          docker inspect my-app --format '{{json .Mounts}}'
+          EOF
