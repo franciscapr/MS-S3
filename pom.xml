@@ -53,6 +53,13 @@
 			<artifactId>spring-cloud-aws-starter-s3</artifactId>
 		</dependency>
 
+<!--Apache PDFBox, Lo utilizamos para la creación de pdf-->
+		<dependency>
+			<groupId>org.apache.pdfbox</groupId>
+			<artifactId>pdfbox</artifactId>
+			<version>3.0.5</version>
+		</dependency>
+
 		<!--<dependency>
 			<groupId>software.amazon.awssdk</groupId>
 			<artifactId>s3</artifactId>
