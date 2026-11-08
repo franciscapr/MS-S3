@@ -220,4 +220,61 @@ public class AwsS3Service {
 			throw new S3OperationException("Error al eliminar el objeto: " + key, e);
 		}
 	}
+
+
+
+
+/**
+ * Sube automaticamente a S3 un ticket PDF
+ * generado por el microservicio.
+ *
+ * @param bucket Nombre del bucket S3
+ * @param key Ruta del ticket dentro de S3
+ * @param pdfBytes Contenido del PDF generado
+ */
+public void uploadPdf(
+        String bucket,
+        String key,
+        byte[] pdfBytes) {
+
+    if (pdfBytes == null || pdfBytes.length == 0) {
+        throw new InvalidFileException(
+                "El ticket PDF esta vacio");
+    }
+
+    try {
+        log.info("Subiendo ticket PDF {} al bucket {}", key, bucket);
+
+        PutObjectRequest request = PutObjectRequest.builder()
+                .bucket(bucket)
+                .key(key)
+                .contentType("application/pdf")
+                .contentLength((long) pdfBytes.length)
+                .build();
+
+        s3Client.putObject(
+                request,
+                RequestBody.fromBytes(pdfBytes)
+        );
+
+        log.info("Ticket PDF subido correctamente a S3: {}", key);
+
+    } catch (NoSuchBucketException e) {
+        throw new S3BucketNotFoundException(bucket, e);
+
+    } catch (S3Exception e) {
+        if (e.statusCode() == 403) {
+            throw new S3AccessDeniedException(
+                    "subir ticket PDF al bucket: " + bucket, e);
+        }
+
+        throw new S3UploadException(
+                "Error al subir el ticket PDF a S3", e);
+    }
+}
+
+
+
+
+
 }
