@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import cl.duoc.ejemplo.ms.administracion.archivos.service.AwsS3Service;
 import cl.duoc.ejemplo.ms.administracion.archivos.service.EfsService;
@@ -80,6 +82,41 @@ public class TicketController {
             .contentLength(pdf.length)
             .body(pdf);
     }
+
+    
+/**
+ * Elimina un ticket PDF de Amazon EFS y Amazon S3.
+ *
+ * Identifica el ticket mediante evento, usuario y codigo.
+ */
+    @DeleteMapping
+    public ResponseEntity<Void> eliminarTicket(
+            @RequestParam String evento,
+            @RequestParam String usuario,
+            @RequestParam String codigoTicket) throws IOException {
+
+        // 1. Construir la ruta del ticket
+        String nombreArchivo =
+                nombreSeguro(codigoTicket) + ".pdf";
+
+        String rutaTicket =
+                "evento-" + nombreSeguro(evento) +
+                "/usuario-" + nombreSeguro(usuario) +
+                "/" + nombreArchivo;
+
+        // 2. Comprobar que el ticket existe en S3
+        awsS3Service.downloadAsBytes(bucket, rutaTicket);
+
+        // 3. Eliminar el PDF almacenado en EFS
+        efsService.eliminarTicketPdf(rutaTicket);
+
+        // 4. Eliminar el objeto de Amazon S3
+        awsS3Service.deleteObject(bucket, rutaTicket);
+
+        // 5. Confirmar que la eliminacion finalizo
+        return ResponseEntity.noContent().build();
+    }
+
 
     private String nombreSeguro(String valor) {
 

@@ -65,4 +65,29 @@ public class EfsService {
 
         return destino;
     }
+
+	
+	/**
+	 * Elimina un ticket PDF almacenado en Amazon EFS.
+	 *
+	 * @param rutaTicket Ruta relativa del ticket dentro de EFS
+	 * @return true si el archivo existia y fue eliminado;
+	 *         false si no existia.
+	 */
+	public boolean eliminarTicketPdf(String rutaTicket)
+			throws IOException {
+
+		// Obtener la ruta validada dentro de EFS
+		Path destino = obtenerRutaSegura(rutaTicket);
+
+		// Verificar que solamente se eliminen archivos PDF
+		if (!destino.getFileName().toString().endsWith(".pdf")) {
+			throw new IllegalArgumentException(
+					"Solo se permite eliminar archivos PDF");
+		}
+
+		// Eliminar el archivo si existe
+		return Files.deleteIfExists(destino);
+	}
+
 }
